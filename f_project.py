@@ -3,6 +3,7 @@ import pyspark as ps
 from pyspark.sql import SparkSession
 import matplotlib as mp
 from pyspark.sql.functions import *
+import os
 
 # Creating Spark Session
 spark = SparkSession.builder.appName('SBA 350').getOrCreate()
@@ -115,3 +116,163 @@ cap_spark = spark.read.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver",
                                              ).load()
 
 
+
+# print("Welcome to Mike Chadwick's Final Project 350!")
+# #from time import sleep
+# sleep(3)
+# #way to make the program understand if its windows or linux? to make it crossplatform compatible?
+# os.system('cls') #'clear' on linux machines
+
+
+# Greeter is a terminal application that greets old friends warmly,
+#   and remembers new friends.
+
+
+### FUNCTIONS ###
+
+def display_title_bar():
+    # Clears the terminal screen, and displays a title bar.
+    os.system('cls')
+    #prints terminal title header          
+    print("\t**********************************************")
+    print("\t***  Greeter - Hello old and new friends!  ***")
+    print("\t**********************************************")
+
+def get_user_choice(choice):
+    #1-3 are TRANSACTION DETAILS MODULE
+    #next option to order by day and descending order(maybe make it optional for ascending as well?)
+    print("[1] Display transactions by customers given zip code and date?.")
+    
+    #next level give them the choice of options education, entertainment, healthcare, grocery, test,
+    #gas, bills
+    print("[2] Display the number and total values of tranactions of a given TYPE.")
+    print("[3] Display the number and total values of transactions for branches of a given STATE.")
+    
+    
+    #4-7 are CUSTOMER DETAILS
+    print("[4] Check account details of an existing customer.")
+    print("[5] Modify the details of an existing customer's account.")
+    print("[6] Generate a monthly bill for a credit card number, given the month and year.")
+    #order by year, month, day in descending order(add ascending?)
+    print("[7] Display the transactions of a customer between two given dates.")
+    
+    
+    # print("[8] Plot which transaction type has a high rate of transactions.")
+    # print("[9] Plot which state has a high number of customers.")
+    # print("[10] Plotthe sum of all transactions for the top 10 customers, and which customer 
+    # has the higherst transaction amount. HINT USE CUST_SSN.")
+    
+    print("[q] Quit.")
+    
+    return input("What would you like to do? ")
+
+#1st choice
+def disp_tran_by_cust_zip(zip, date):
+    #check zip leng/structure(5 digits)
+    #check date length/structure etc
+    print()
+
+#2nd choice
+def disp_tran_total_by_type(t_type):
+    print()
+
+#3rd choice    
+def disp_tran_total_by_branch_state(state):
+    print()
+
+#4th choice
+def check_cust_exist(cust_ssn):
+    print()
+
+#5th choice 
+def modify_cust_account(cust_ssn):
+    #check cust numb(cust_ssn) length(9 digits) etc
+    print()
+
+#6th choice
+def gen_monthly_bill_by_card_number(card, start_date, end_date):
+    print()
+
+#7th choice
+def disp_tran_by_cust_between_given_dates():
+    print()
+
+#8th choice
+# def disp_tran_by_cust_zip():
+#     print()
+
+#check case function
+#can you make a loop to keep prompting the user until the desired input is met?
+#can you make it one loop in a single function to check every case passed to it and not just type 
+#specific (ie need different function for date, zip)
+zip_pattern = r'\d{5}$'
+date_pattern = r''
+ssn_pattern = r'^\d{9}$'
+file_type_pattern = r''
+credit_card_pattern = r'^\d{16}$'
+#does it match with table even if user inputs only lower case ?
+state_pattern = r'^[A-Za-z]{2}$'
+
+def check_case(user_input, pattern):
+    # return len(zip) == 5 and zip.isdigit()
+    while not user_input.match(pattern):
+            user_input = input("Please enter a correctly fomated value: ")
+    return user_input
+
+### MAIN PROGRAM ###
+
+# Set up a loop where users can choose what they'd like to do.
+choice = ''
+display_title_bar()
+while choice != 'q':    
+
+    #shows menu options then returns the user's choice
+    choice = get_user_choice()
+     
+    # Respond to the user's choice.
+    if choice == '1':
+        zip = input("Enter the 5 digit desired zipcode: ")
+        check_case(zip, zip_pattern)
+        date = input("Enter desired date (YYYY-MM-DD): ")
+        check_case(date, date_pattern)
+        disp_tran_by_cust_zip(zip, date)
+    elif choice == '2':
+        t_type = input("Enter desired file type: ")
+        check_case(t_type, file_type_pattern)
+        disp_tran_total_by_type(t_type)
+    elif choice == '3':
+        state = input("Enter desired state of query: ")
+        check_case(state, state_pattern)
+        disp_tran_total_by_branch_state(state)
+    elif choice == '4':
+        cust_ssn = input("Enter in customer's SSN: ")
+        check_case(cust_ssn, ssn_pattern)
+        check_cust_exist(cust_ssn, ssn_pattern)
+    elif choice == '5':
+        cust_ssn = input("Enter customer's SSN for the acconut account you wish to modify: ")
+        check_case(cust_ssn, ssn_pattern)
+        modify_cust_account(cust_ssn)
+    elif choice == '6':
+        card = input("Enter in credit card number: ")
+        check_case(card, credit_card_pattern)
+        date = input("Enter in start date (YYYY-MM-DD): ")
+        check_case(date, date_pattern)
+        date2 = input("Enter in end date (YYYY-MM-DD): ")
+        check_case(date2, date_pattern)
+        gen_monthly_bill_by_card_number(card, date, date2)
+    elif choice == '7':
+        cust_ssn = input("Enter in customer's SSN number: ")
+        check_case(cust_ssn, ssn_pattern)
+        date = input("Enter in start date (YYYY-MM-DD): ")
+        check_case(date, date_pattern)
+        date2 = input("Enter in end date (YYYY-MM-DD): ")
+        check_case(date2, date_pattern)
+        disp_tran_by_cust_between_given_dates(cust_ssn, date, date2)
+    # elif choice == '8':
+    #     def disp_tran_by_cust_zip()
+    # elif choice == '9':
+        # print("\nI can't wait to meet this person!\n")
+    elif choice == 'q':
+        print("\nExiting program.")
+    else:
+        print("\nI didn't understand that choice.\n")
