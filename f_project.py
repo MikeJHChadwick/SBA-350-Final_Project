@@ -4,7 +4,6 @@ from pyspark.sql import SparkSession
 import matplotlib.pyplot as mp
 from pyspark.sql.functions import *
 import os
-from time import sleep
 import re
 from pyspark.sql.types import StringType
 
@@ -15,15 +14,13 @@ customer_spark = spark.read.load("cdw_sapp_customer.json", format="json")
 branch_spark = spark.read.load("cdw_sapp_branch.json", format= "json")
 credit_spark = spark.read.load("cdw_sapp_credit.json", format= "json")
 
-
-# tan_customer = customer_spark['FIRST_NAME', 'MIDDLE_NAME', 'LAST_NAME', 'STREET_NAME','APT_NO', 'CUST_PHONE']
-# customer_spark.createOrReplaceTempView('customer')
-
-
+#transforms the passed df's column into title case(initcap)
 def tran_cust_title_case(df, column_name):
     return df.withColumn(column_name,initcap(col(column_name)))
+#transforms the passed df's column into lower case
 def tran_cust_lower_case(df, column_name):
     return df.withColumn(column_name,lower(col(column_name)))
+# concats the customer's street and apt numbers into single column 
 def concat_cust_street_apt(df, col1, col2):
     #concat_ws concatenates multiple string columns 
     return df.withColumn('FULL_STREET_ADDRESS', concat_ws(',', col(col1), col(col2)))
@@ -43,7 +40,7 @@ def tran_branch_zip(df):
 #match cust state to branch state and slice branch phone 3-5 (last included?) to append to cust phone after 2nd element
 #first left join the cust df and the branch df on their respective states like in sql
 #getting duplicate rows are created for each row the join operation matches
-custJoinbranch = customer_spark.join(branch_spark, customer_spark['CUST_STATE'] == branch_spark['BRANCH_STATE'], 'left')
+custJoinbranch = customer_spark.join(branch_spark, customer_spark.CUST_STATE == branch_spark.BRANCH_STATE, 'left')
 
 # Updating the customer phone by appending a sliced portion of the branch phone
 customer_fix = custJoinbranch.withColumn('CUST_PHONE', concat(col('CUST_PHONE').substr(1, 2), col('BRANCH_PHONE').substr(3, 3), col('CUST_PHONE').substr(3, 7)))
@@ -55,8 +52,8 @@ customer_fix = customer_fix.drop(*unwanted_columns).dropDuplicates(['SSN'])
 
 # concat the day, month, year columns into a TIMEID (YYYYMMDD)
 def tran_to_timeid(df, day, month, year):
-    # first concat the columns so you can use the to_date function so its format won't match the 
-    # other tables. Need to lpad the month and day values so not to throw error when parsing to
+    # first concat the columns so you can use the to_date function. Its format won't match the 
+    # other tables. Need to lpad the month and day values so not to throw error when parsing too
     # to_date. The 2 represents the desired length of the string and the 0 is what we're left-padding 
     # with. Can't even do what the mapping logic wants YYYYMMDD
     date_string = concat(
@@ -68,7 +65,6 @@ def tran_to_timeid(df, day, month, year):
 
 
 #transforming the specified columns, from the mapping document, of the extracted customer df into new df
-# tran_cust_spark = customer_spark.transform(tran_cust_title_case, 'FIRST_NAME')\
 tran_cust_spark = customer_fix.transform(tran_cust_title_case, 'FIRST_NAME')\
 .transform(tran_cust_lower_case, 'MIDDLE_NAME')\
 .transform(tran_cust_title_case, 'LAST_NAME')\
@@ -78,15 +74,16 @@ tran_cust_spark = customer_fix.transform(tran_cust_title_case, 'FIRST_NAME')\
 
 
 #transforming the specified columns, from the mapping document, of the extracted branch df into new df
-#just need to transform the branch_zip if the source value is null load default (99999) value else direct move
-#and branch_phone change the format of phone number to (xxx)xxx-xxxx
+#just need to transform the branch_zip if the source value is null load default (99999) value else direct move;
+#also change branch_phone format to (xxx)xxx-xxxx
 tran_branch_spark = branch_spark.transform(tran_branch_zip)\
 .transform(tran_phone_num, 'BRANCH_PHONE')
 
 
 #transforming the specified columns, from the mapping document, of the extracted credit df into new df
 #just need to convert/concat the day, month, year columns into a TIMEID (YYYYMMDD)
-#is there a way to use a timestamp and not just concat? is there an easier way?
+
+###is there a way to use a timestamp and not just concat? is there an easier way?
 tran_credit_spark = credit_spark.transform(tran_to_timeid, 'DAY', 'MONTH', 'YEAR')\
 .drop('DAY','MONTH','YEAR')
 
@@ -97,7 +94,7 @@ tran_cust_spark.write.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver",
                                      user="root",
                                      password="password",
                                      url="jdbc:mysql://localhost:3306/creditcard_capstone",
-                                     dbtable="CDW_SAPP_CUSTOMER ", 
+                                     dbtable="CDW_SAPP_CUSTOMER", 
                                      ).mode('overwrite').save()
 
 tran_branch_spark.write.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver",
@@ -135,54 +132,33 @@ credit_sql = spark.read.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver"
                                              dbtable="CDW_SAPP_CREDIT_CARD"
                                              ).load()
 
-# Display the contents of the DataFrame
-# cap_spark.show()
-
-
-# print("Welcome to Mike Chadwick's Final Project 350!")
-# #from time import sleep
-# sleep(3)
-# #way to make the program understand if its windows or linux? to make it crossplatform compatible?
-# os.system('cls') #'clear' on linux machines
-
-
-# Greeter is a terminal application that greets old friends warmly,
-#   and remembers new friends.
-
 
 ### FUNCTIONS ###
 
+# Clears the terminal screen, and displays a title bar.
 def display_title_bar():
-    # Clears the terminal screen, and displays a title bar.
     os.system('cls')
-              
     print("\t**********************************************")
     print("\t***  Welcome to Chad's Final Project!  ***")
     print("\t**********************************************")
 
+#takes the user's input and then executes the corresponding functions
 def get_user_choice():
     #1-3 are TRANSACTION DETAILS MODULE
     #next option to order by day and descending order(maybe make it optional for ascending as well?)
     print("[1] Display transactions by customers given zip code and date?.")
-    
-    #next level give them the choice of options education, entertainment, healthcare, grocery, test,
-    #gas, bills
     print("[2] Display the number and total values of tranactions of a given TYPE.")
     print("[3] Display the number and total values of transactions for branches of a given STATE.")
-    
-    
     #4-7 are CUSTOMER DETAILS
     print("[4] Check account details of an existing customer.")
     print("[5] Modify the details of an existing customer's account.")
     print("[6] Generate a monthly bill for a credit card number, given the month and year.")
-    #order by year, month, day in descending order(add ascending?)
     print("[7] Display the transactions of a customer between two given dates.")
-    
-    
+    #8-10 are plotting options
     print("[8] Plot which transaction type has a high rate of transactions.")
     print("[9] Plot which state has a high number of customers.")
-    print("[10] Plot the sum of all transactions for the top 10 customers, and which customer \
-    has the higherst transaction amount. HINT USE CUST_SSN.")
+    print("[10] Plot the sum of all transactions for the top 10 customers, and which customer"
+          " has the highest transaction amount. ")
     
     print("[q] Quit.")
     
@@ -190,24 +166,32 @@ def get_user_choice():
 
 #1st choice
 #Used to display the transactions made by customers living in a given zip code for a given month and
-#  year. Order by day in descending order.
+# year. Order by day in descending order.
 
 #column date data, that isnt in the tran_credit_spark, is formatted in ISO 8601 standard 
 #ie 2018-04-18T16:51:47.000-04:00 (YYYY-MM-DD T HH:MM:SS.SSS - TIMEZONE)
-def disp_tran_by_cust_zip(zip, date):
-    #join cust_sql with credit_sql on cust_ssn; zip is an int and 
-    custJoinCredit =  cust_sql.join(credit_sql, cust_sql['SSN'] == credit_sql['CUST_SSN'], 'left')
+def disp_tran_by_cust_zip(zip, y, m):
+    #join cust_sql with credit_sql on cust_ssn
+    custJoinCredit =  cust_sql.join(credit_sql, cust_sql.SSN == credit_sql.CUST_SSN, 'left')
     #drop the ssn column and specifically the credit_sql.credit_card_no to avoid duplicates in the show object
     # could do the cust_spark one, depends on where you want the credit_card_no column to be on the table
+    #just have to do .sort(desc('TIMEID')), will auomatically put it in desc by year, month, day. .sort() is the same as .orderBy() 
     custJoinCredit = custJoinCredit.drop('SSN', credit_sql.CREDIT_CARD_NO)
-    custJoinCredit.filter((custJoinCredit.CUST_ZIP == zip) & (custJoinCredit.TIMEID== date)).show()
-    # print(len(custJoinCredit.columns))
+    custJoinCredit.filter((custJoinCredit.CUST_ZIP == zip) & 
+                          (year(custJoinCredit.TIMEID) == y) &
+                          (month(custJoinCredit.TIMEID) == m)).sort(desc('TIMEID')).show()
 
 #2nd choice
 # Used to display the number and total values of transactions for a given type. 
 def disp_tran_total_by_type(t_type):
-    credit_sql.filter(credit_sql['TRANSACTION_TYPE'] == t_type).show(n=50)
-    # print(credit_sql.filter(credit_sql['TRANSACTION_TYPE'] == t_type).count())
+    # credit_sql.filter(credit_sql.TRANSACTION_TYPE == t_type).show()
+    t_num = credit_sql.filter(credit_sql.TRANSACTION_TYPE == t_type).count()
+        #collect the df transformation
+        #need the list indeces at the end so it doesn't look all wonky; its a
+        #single aggregated value so only need [0][0] with no incrementation required in loop
+        #have to round because defulat is 6 decimals for w/e reason
+    t_sum = credit_sql.filter(credit_sql.TRANSACTION_TYPE == t_type).select(round(sum(credit_sql.TRANSACTION_VALUE), 2)).collect()[0][0]
+    print(f"The number of transactions for {t_type} is {t_num}. With their sum total being ${t_sum}\n")
 
 #3rd choice
 # Used to display the total number and total values of transactions for branches in a given state.    
@@ -215,20 +199,22 @@ def disp_tran_total_by_branch_state(state):
     #need to join branch_sql w/ credit_sql on branch_code; then filter by state and show the total
     # value and category of all transactions
     ttypes = ['Education', 'Entertainment', 'Healthcare', 'Grocery', 'Test', 'Gas', 'Bills']
-    branchJoinCredit = branch_sql.join(credit_sql, branch_sql['BRANCH_CODE'] == credit_sql['BRANCH_CODE'], 'left')
+    branchJoinCredit = branch_sql.join(credit_sql, branch_sql.BRANCH_CODE == credit_sql.BRANCH_CODE, 'left')
     #set it to a new variable for further filtering
     b = branchJoinCredit.filter(branchJoinCredit.BRANCH_STATE == state)
-    b.show()
     for trans in ttypes:
-        #filtering transactions column for only the current type from the ttypes list; then taking the sum 
-        #of them using the aggregate function; use collect to return the results as a list so we can set the
-        #sum_value variable equal to it; need the list indeces at the end so it doesn't look all wonky; its a
-        #single aggregated value so only need [0][0] with no incrementation required in loop
-        #have to round because defulat is 6 decimals for w/e reason
-        # sum_value = b.filter(b.TRANSACTION_TYPE == trans).agg({'TRANSACTION_VALUE': 'sum'}).collect()[0][0]
-        sum_value = b.filter(b.TRANSACTION_TYPE == trans)\
-        .select(round(sum(b.TRANSACTION_VALUE), 2)).collect()[0][0]
-        print(f"Total value of {trans} transactions in {state}: ${sum_value}")
+        #filtering transactions column for only the current type from the ttypes list; use collect
+        #to return the results as a list so we can set the
+        #sum_value variable equal to it; need the list indeces at the end so it doesn't look all wonky;
+        #its a single aggregated value so only need [0][0] with no incrementation required in loop
+        #have to round because defualt is 6 decimals for w/e reason
+        sum_value = b.filter(b.TRANSACTION_TYPE == trans).select(round(sum(b.TRANSACTION_VALUE), 2))\
+            .collect()[0][0]
+        t_count = b.filter(b.TRANSACTION_TYPE == trans).select(b.TRANSACTION_VALUE).count()
+        print(f"There where {t_count} {trans} transactions in {state} with their value equating to: ${sum_value}")
+    total_trans_value = b.select(round(sum(b.TRANSACTION_VALUE), 2)).collect()[0][0]
+    trans_count = b.select(b.TRANSACTION_VALUE).count()
+    print(f'The total amount of transactions in {state} is {trans_count}, with their sum being ${total_trans_value}')
     print()
 
 #4th choice
@@ -239,12 +225,29 @@ def check_cust_exist(cust_ssn):
 
 #5th choice
 #  Used to modify the existing account details of a customer.
-def modify_cust_account(cust_ssn):
-    attributes = []
-    for column in cust_sql:
-        attributes.append(column)
-    cust_sql.select(cust_sql.SSN == cust_ssn)
-    print()
+def modify_cust_account(cust_ssn, cust_sql):
+    #have to do cust_sql.columns instead of just cust_sql so when using column in the loops print f
+    #it just prints its name instead of all the extra wonky stuff
+    temp_sql = cust_sql
+    for column in cust_sql.columns:
+        user_input = input(f"Do you want to modify customer's {column} (y/n): ")
+        if user_input.lower() == 'y':
+            new_value = input(f'Enter the new value for {column}: ')
+            temp_sql = temp_sql.withColumn(column, when(temp_sql.SSN == cust_ssn, new_value).otherwise(col(column)))
+        else:
+            continue
+    modified_row =temp_sql.filter(temp_sql.SSN == cust_ssn)
+    modified_row.show()
+    # spark.catalog.uncacheTable("CDW_SAPP_CUSTOMER")
+    # spark.sql("DROP TABLE IF EXISTS CDW_SAPP_CUSTOMER")
+    # Write the modified DataFrame back to the SQL database
+    temp_sql.write.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver",
+                                     user="root",
+                                     password="password",
+                                     url="jdbc:mysql://localhost:3306/creditcard_capstone",
+                                     dbtable="CDW_SAPP_CUSTOMER_MODIFIED", 
+                                     mode='overwrite').save()
+    ### why does ).mode('overwrite').save()   overwrite the whole table as blank, when mode='overwrtie').save() throws ErrorIfExists?
 
 #6th choice
 # Used to generate a monthly bill for a credit card number for a given month and year. 
@@ -255,7 +258,7 @@ def gen_monthly_bill_by_card_number(card, y, m):
     # just have to access the credit_sql
     credit_sql.filter((year(credit_sql.TIMEID) == y ) & 
                       (month(credit_sql.TIMEID) == m ) & 
-                      (credit_sql.CREDIT_CARD_NO == card)).show()
+                      (credit_sql.CREDIT_CARD_NO == card)).sort(desc('TIMEID')).show()
     #have to round the sum because for w/e reason w/o it it somehow makes it 6 decimals
     # gave alias for legibility 
     credit_sql.filter((year(credit_sql.TIMEID) == y ) & 
@@ -280,11 +283,7 @@ def disp_tran_by_cust_between_given_dates(cust_ssn, sd, ed):
 def plot_high_tran_type():
     # have to use toPandas to be able to plot; use groupby to group the transaction types together
     panda_credit = credit_sql.toPandas()
-    # panda_credit = tran_credit_spark.toPandas()
     # then run the count of transactions of ea type; then run the sum of their values; 
-    # use dot notation(instead of bracket notation) to access
-    # TRANSACTIONS_VALUE for flex points
-    
     # adding the .max() and removing the sort_values does print the highes sum which is 351405.28 but
     # not its name which is Bills; have to do .size().max() to get just the numerical value of the highest transaction type. 
     p_sum = panda_credit.groupby('TRANSACTION_TYPE').TRANSACTION_VALUE.sum()
@@ -307,7 +306,6 @@ def plot_high_tran_type():
 def plot_high_cust_state():
     #just need to use cust_spark
     panda_cust = cust_sql.toPandas()
-    # panda_cust = tran_cust_spark.toPandas()
     
     #x axis should be states and y axis should be number of customers who reside there
     #select the values counts for the cust_state column
@@ -324,10 +322,8 @@ def plot_high_cust_state():
 #  highest transaction amount(amount as in sum? or who has the most transactions at all?)
 def plot_sum_of_top_ten_cust():
     #need to use credit_spark, and cust_spark if want to match ssn with actual names
-    # panda_creadit = credit_sql.toPandas()
+    panda_credit = credit_sql.toPandas()
     # panda_cust = cust_sql.toPandas()
-    panda_credit = tran_credit_spark.toPandas()
-    # panda_cust = tran_cust_spark.toPandas()
     
     #x axis should be states and y axis should be number of customers who reside there
     #grouping by cust_ssn and then taking the sum of their transactions
@@ -342,6 +338,7 @@ def plot_sum_of_top_ten_cust():
     mp.ylabel('Sum of Transactions')
     mp.title('Sum of Top Ten Customers\' Transactions')
     mp.xticks(rotation=45)
+    #had to adjust subplot to see the custoemrs ssn
     mp.subplots_adjust(bottom=0.2)
     mp.show()
 
@@ -349,24 +346,30 @@ def plot_sum_of_top_ten_cust():
 #can you make a loop to keep prompting the user until the desired input is met?
 #can you make it one loop in a single function to check every case passed to it and not just type 
 #specific (ie need different function for date, zip)
-zip_pattern = r'\d{5}$'
-month_pattern = r'{0-1}{0-9}'
+zip_pattern = r'\d{5}'
+month_pattern = r'(0[1-9]|1[0-2])'
 year_pattern = r'\d{4}$'
-date_pattern = r'\d{4}$'
+#in this specific version will only be able to accept year ranges from 1900-2099. For scalability would need to change or
+# revert it to the original \d{4} 
+date_pattern = r'(19\d{2}|20\d{2})\-(0[1-9]|1[0-2])\-(0[1-9]|[1-2][0-9])'
 ssn_pattern = r'^\d{9}$'
 # Education(9), Entertainment(13), Healthcare(10),\n \
 # Grocery(7), Test(4), Gas(3), Bills(5)
 # compile to be able to use re.IGNORECASE or (?i) to make case insensitive
 # what are the pros and cons of making the regex's objects? 
 transaction_type_pattern = r'(?i)(education|entertainment|healthcare|grocery|test|gas|bills)'
-credit_card_pattern = r'^\d{16}$'
+credit_card_pattern = r'\d{16}'
 #does it match with table even if user inputs only lower case ?
-state_pattern = r'^[A-Za-z]{2}$'
+state_pattern = r'[A-Za-z]{2}'
 
 #will this force the user to enter in the correct input?
 def check_case(user_input, pattern):
     # return len(zip) == 5 and zip.isdigit()
-    while not user_input.match(pattern):
+    #have to use re.match(user_input, pattern) instead of user_input.match(pattern) because it needs to be a regular expression object
+    #have to pass the pattern as the frist object to match vs the user_input
+    #had to change from .match to .fullmatch because when validating the user input for the month if would accept 4 digit
+    #strings as long as part of it matched one of the check cases, even when using ^ and $
+    while not re.fullmatch(pattern, user_input):
             user_input = input("Please enter a correctly fomated value: ")
     return user_input
 
@@ -383,41 +386,49 @@ while choice != 'q':
     # if ele switch statement. Prompts user input given by their menu choice, then checks their input vs correct input pattern before calling the appropriate function.
     if choice == '1':
         zip = input("Enter the 5 digit desired zipcode: ")
-        # check_case(zip, zip_pattern)
-        date = input("Enter desired date (YYYY-MM-DD): ")
-        # check_case(date, date_pattern)
-        disp_tran_by_cust_zip(zip, date)
+        #have to set the variables to the function call so it stores the return value to be used after second check case. Was having issue, after purposefully misinputing 
+        # the first check case, if then inputing the second check case correctly it displayed the queried information. But if misinputing the second check case, then the correct syntax, if would just
+        # display the column names. 
+        zip = check_case(zip, zip_pattern)
+        y = input("Enter in year (yyyy): ")
+        y = check_case(y, year_pattern)
+        m = input("Enter in month (MM): ")
+        m = check_case(m, month_pattern)
+        # date = input("Enter desired date (YYYY-MM-DD): ")
+        # date = check_case(date, date_pattern)
+        disp_tran_by_cust_zip(zip, y, m)
     elif choice == '2':
         t_type = input("Enter desired transaction type(Education, Entertainment, Healthcare, Grocery, Test, Gas, Bills): ")
-        # check_case(t_type, transaction_type_pattern)
+        t_type = check_case(t_type, transaction_type_pattern)
         disp_tran_total_by_type(t_type)
     elif choice == '3':
         state = input("Enter desired state of query: ")
-        # check_case(state, state_pattern)
+        state = check_case(state, state_pattern)
         disp_tran_total_by_branch_state(state)
     elif choice == '4':
         cust_ssn = input("Enter in customer's SSN: ")
-        # check_case(cust_ssn, ssn_pattern)
+        cust_ssn = check_case(cust_ssn, ssn_pattern)
         check_cust_exist(cust_ssn)
     elif choice == '5':
+        #should i name this variable differently?
         cust_ssn = input("Enter customer's SSN for the acconut account you wish to modify: ")
-        # check_case(cust_ssn, ssn_pattern)
-        modify_cust_account(cust_ssn)
+        cust_ssn = check_case(cust_ssn, ssn_pattern)
+        modify_cust_account(cust_ssn, cust_sql)
     elif choice == '6':
         card = input("Enter in credit card number: ")
-        # check_case(card, credit_card_pattern)
+        card = check_case(card, credit_card_pattern)
         y = input("Enter in year (yyyy): ")
-        # check_case(y, year_pattern)
+        y = check_case(y, year_pattern)
         m = input("Enter in month (MM): ")
-        # check_case(m, month_pattern)
+        m = check_case(m, month_pattern)
         gen_monthly_bill_by_card_number(card, y, m)
     elif choice == '7':
         cust_ssn = input("Enter in customer's SSN number: ")
-        # check_case(cust_ssn, ssn_pattern)
+        cust_ssn = check_case(cust_ssn, ssn_pattern)
         sd = input("Enter in start date (YYYY-MM-DD): ")
-        # check_case(sd, date_pattern)
+        sd = check_case(sd, date_pattern)
         ed = input("Enter in end date (YYYY-MM-DD): ")
-        # check_case(ed, date_pattern)
+        ed = check_case(ed, date_pattern)
         disp_tran_by_cust_between_given_dates(cust_ssn, sd, ed)
     elif choice == '8':
         plot_high_tran_type()
