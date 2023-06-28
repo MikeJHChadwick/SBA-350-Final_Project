@@ -8,6 +8,7 @@ import re
 from pyspark.sql.types import StringType
 import numpy as np
 import requests
+import mysql.connector
 
 # Creating Spark Session
 spark = SparkSession.builder.appName('SBA 350').getOrCreate()
@@ -253,34 +254,29 @@ def check_cust_exist(cust_ssn):
 #5th choice
 #  Used to modify the existing account details of a customer.
 def modify_cust_account(cust_ssn, cust_sql):
+    con = mysql.connector.connect(user='root', password='password', host='localhost', database='creditcard_capstone')
+    cursor = con.cursor()
     #have to do cust_sql.columns instead of just cust_sql so when using column in the loops print f
     #it just prints its name instead of all the extra wonky stuff
-    temp_sql = cust_sql
+
     for column in cust_sql.columns:
         user_input = input(f"Do you want to modify customer's {column} (y/n): ")
         if user_input.lower() == 'y':
             new_value = input(f'Enter the new value for {column}: ')
-            temp_sql = temp_sql.withColumn(column, when(temp_sql.SSN == cust_ssn, new_value).otherwise(col(column)))
+            update_q =  f"UPDATE CDW_SAPP_CUSTOMER SET {column} = %s WHERE SSN = %s"
+            cursor.execute(update_q, (new_value, cust_ssn))
         else:
             continue
-    modified_row =temp_sql.filter(temp_sql.SSN == cust_ssn)
-    modified_row.show()
-    # spark.catalog.uncacheTable("CDW_SAPP_CUSTOMER")
-    # spark.sql("DROP TABLE IF EXISTS CDW_SAPP_CUSTOMER")
+    #commit the changes to table then close the cursor and connection
+    con.commit()
+    cursor.close()
+    con.close()
     # Write the modified DataFrame back to the SQL database
-    temp_sql.write.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver",
-                                     user="root",
-                                     password="password",
-                                     url="jdbc:mysql://localhost:3306/creditcard_capstone",
-                                     dbtable="CDW_SAPP_CUSTOMER_MODIFIED", 
-                                     mode='overwrite').save()
-    ### why does ).mode('overwrite').save()   overwrite the whole table as blank, when mode='overwrtie').save() throws ErrorIfExists?
 
 #6th choice
 # Used to generate a monthly bill for a credit card number for a given month and year. 
 #column date data, that isnt in the tran_credit_spark, is formatted in ISO 8601 standard 
 #ie 2018-04-18T16:51:47.000-04:00 (YYYY-MM-DD T HH:MM:SS.SSS - TIMEZONE)
-# def gen_monthly_bill_by_card_number(card, year):
 def gen_monthly_bill_by_card_number(card, y, m):
     # just have to access the credit_sql
     credit_sql.filter((year(credit_sql.TIMEID) == y ) & 
@@ -350,7 +346,6 @@ def plot_high_cust_state():
 def plot_sum_of_top_ten_cust():
     #need to use credit_spark, and cust_spark if want to match ssn with actual names
     panda_credit = credit_sql.toPandas()
-    # panda_cust = cust_sql.toPandas()
     
     #x axis should be states and y axis should be number of customers who reside there
     #grouping by cust_ssn and then taking the sum of their transactions
@@ -359,7 +354,6 @@ def plot_sum_of_top_ten_cust():
     p_top = p_top.sort_values(ascending=False)
     p_10 = p_top.head(10)
     mp.figure(figsize=(10,6))
-    # mp.bar(p_10.index, p_10.values)
     p_10.plot(kind='bar')
     mp.xlabel('Customers')
     mp.ylabel('Sum of Transactions')
@@ -384,8 +378,6 @@ def plot_self_employed_approved_loans():
                         (loan_df.Application_Status == 'Y' )).count()
     #then another variable counting the total amount of self-employed applications
     total_apps = loan_df.filter((loan_df.Self_Employed == 'Yes')).count()
-    #calculate the percentage of approve_apps vs total_apps
-    # app_percent = (approved_apps / total_apps) * 100
     non_approved_apps = total_apps - approved_apps
     labels = ['Approved Applications', 'Non-Approved Applications']
     slices = [approved_apps, non_approved_apps]
@@ -401,15 +393,11 @@ def plot_rejected_male_married_apps():
     rejected_married_male_apps = loan_df.filter((loan_df.Married == 'Yes') & (loan_df.Gender == 'Male') & (loan_df.Application_Status == 'N' )).count()
     total_married_male_apps = loan_df.filter((loan_df.Married == 'Yes') & (loan_df.Gender == 'Male')).count()
     approved_married_male_apps = total_married_male_apps - rejected_married_male_apps
-    # male_bar = pd.Series([rejected_married_male_apps, approved_married_male_apps, total_married_male_apps], 
-    #                      index=['Rejected Applications', 'Approved Applications', 'Total Applications'])
     labels = ['Rejected Applications', 'Approved Applications']
     slices = [rejected_married_male_apps, approved_married_male_apps]
     mp.title('Rejected Applications of Married Men')
     explode = [0.2, 0] 
     mp.pie(slices, labels=labels, autopct='%.2f%%', startangle=90, explode=explode)                
-    # mp.xticks(rotation=90)
-    # mp.xticks(male_bar.index, ['Rejected Applications', 'Approved Applications', 'Total Applications'], rotation=90)
     mp.show()
     
 #13th choice
@@ -427,11 +415,8 @@ def plot_top_three_sale_months():
     p_3.plot(kind='bar', color='magenta')
     for i, value in enumerate(p_3):
         mp.text(i, value, str(value), ha='center', va='bottom')
-    # mp.xlabel('Months')
     mp.ylabel('Count of Transactions')
     mp.title('Total number of Transactions for the Top Three Months')
-    # mp.ylim(0, top=top_three.max() + 100)
-    # mp.yticks(range(0, top_three.max() + 200, 100))
     mp.xticks(rotation=45)
     mp.show()
     
