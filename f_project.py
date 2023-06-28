@@ -6,6 +6,8 @@ from pyspark.sql.functions import *
 import os
 import re
 from pyspark.sql.types import StringType
+import numpy as np
+import requests
 
 # Creating Spark Session
 spark = SparkSession.builder.appName('SBA 350').getOrCreate()
@@ -133,6 +135,27 @@ credit_sql = spark.read.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver"
                                              ).load()
 
 
+
+#4. Functional Requirements - LOAN Application Dataset
+
+#Create a Python program to GET (consume) data from the above API endpoint for the loan
+#  application dataset.
+bank_url = 'https://raw.githubusercontent.com/platformps/LoanDataset/main/loan_data.json'
+response = requests.get(bank_url)
+loan_data = response.json()
+
+#Once Python reads data from the API, utilize PySpark to load data into RDBMS (SQL).
+# The table name should be CDW-SAPP_loan_application in the database.
+# Note: Use the “creditcard_capstone” database.
+loan_df = spark.createDataFrame(loan_data)
+loan_df.write.format("jdbc").options(driver="com.mysql.cj.jdbc.Driver",
+                                     user="root",
+                                     password="password",
+                                     url="jdbc:mysql://localhost:3306/creditcard_capstone",
+                                     dbtable="CDW_SAPP_loan_application", 
+                                     ).mode('overwrite').save()
+
+
 ### FUNCTIONS ###
 
 # Clears the terminal screen, and displays a title bar.
@@ -159,6 +182,10 @@ def get_user_choice():
     print("[9] Plot which state has a high number of customers.")
     print("[10] Plot the sum of all transactions for the top 10 customers, and which customer"
           " has the highest transaction amount. ")
+    print("[11] Plot the approved applications of self-employed applicants. ")
+    print("[12] Plot the rejected applications of married men. ")
+    print("[13] Plot the top three months with the highests amount of transactions. ")
+    print("[14] Print response status code. ")
     
     print("[q] Quit.")
     
@@ -341,9 +368,81 @@ def plot_sum_of_top_ten_cust():
     #had to adjust subplot to see the custoemrs ssn
     mp.subplots_adjust(bottom=0.2)
     mp.show()
+    
+#11th choice
+def plot_self_employed_approved_loans():
+    # 5. Functional Requirements - Data Analysis and Visualization for LOAN Application
+    # After the data is loaded into the database, the business analyst team wants to analyze and
+    #  visualize the data.
+    # Use Python libraries for the below requirements:
 
+    #Find and plot the percentage of applications approved for self-employed applicants.
+    # Note: Take a screenshot of the graph. 
+
+    #first make a variable counting the number of approved self-employed applicants
+    approved_apps = loan_df.filter((loan_df.Self_Employed == 'Yes') & 
+                        (loan_df.Application_Status == 'Y' )).count()
+    #then another variable counting the total amount of self-employed applications
+    total_apps = loan_df.filter((loan_df.Self_Employed == 'Yes')).count()
+    #calculate the percentage of approve_apps vs total_apps
+    # app_percent = (approved_apps / total_apps) * 100
+    non_approved_apps = total_apps - approved_apps
+    labels = ['Approved Applications', 'Non-Approved Applications']
+    slices = [approved_apps, non_approved_apps]
+    mp.title('Approved Applications for Self-Employed Applicants')
+    explode = [0.2, 0]
+    mp.pie(slices, labels=labels, autopct='%.2f%%', startangle=90, explode=explode)                      
+    mp.show()    
+
+#12th choice    
+def plot_rejected_male_married_apps():
+    #Find the percentage of rejection for married male applicants.
+    # Note: Take a screenshot of the graph.
+    rejected_married_male_apps = loan_df.filter((loan_df.Married == 'Yes') & (loan_df.Gender == 'Male') & (loan_df.Application_Status == 'N' )).count()
+    total_married_male_apps = loan_df.filter((loan_df.Married == 'Yes') & (loan_df.Gender == 'Male')).count()
+    approved_married_male_apps = total_married_male_apps - rejected_married_male_apps
+    # male_bar = pd.Series([rejected_married_male_apps, approved_married_male_apps, total_married_male_apps], 
+    #                      index=['Rejected Applications', 'Approved Applications', 'Total Applications'])
+    labels = ['Rejected Applications', 'Approved Applications']
+    slices = [rejected_married_male_apps, approved_married_male_apps]
+    mp.title('Rejected Applications of Married Men')
+    explode = [0.2, 0] 
+    mp.pie(slices, labels=labels, autopct='%.2f%%', startangle=90, explode=explode)                
+    # mp.xticks(rotation=90)
+    # mp.xticks(male_bar.index, ['Rejected Applications', 'Approved Applications', 'Total Applications'], rotation=90)
+    mp.show()
+    
+#13th choice
+def plot_top_three_sale_months():
+    #Find and plot the top three months with the largest transaction data.
+    # Note: Take a screenshot of the graph.
+    #need to just use credit_sql; switch .size() and .sum() depending on what they wanted. 
+    panda_credit_temp = credit_sql.toPandas()
+    top_three = panda_credit_temp.groupby(pd.DatetimeIndex(panda_credit_temp.TIMEID).month)\
+        .TRANSACTION_VALUE.size()
+    # #sort months in descending order by transaction count
+    top_three = top_three.sort_values(ascending=False)
+    p_3 = top_three.head(3)
+    # mp.figure(figsize=(10,6))
+    p_3.plot(kind='bar', color='magenta')
+    for i, value in enumerate(p_3):
+        mp.text(i, value, str(value), ha='center', va='bottom')
+    # mp.xlabel('Months')
+    mp.ylabel('Count of Transactions')
+    mp.title('Total number of Transactions for the Top Three Months')
+    # mp.ylim(0, top=top_three.max() + 100)
+    # mp.yticks(range(0, top_three.max() + 200, 100))
+    mp.xticks(rotation=45)
+    mp.show()
+    
+#14th choice
+def print_response_status_code():
+    #Find the status code of the above API endpoint.
+    # Hint: status code could be 200, 400, 404, 401.
+    print(response.status_code)
+    print() 
+    
 #check case function
-#can you make a loop to keep prompting the user until the desired input is met?
 #can you make it one loop in a single function to check every case passed to it and not just type 
 #specific (ie need different function for date, zip)
 zip_pattern = r'\d{5}'
@@ -353,18 +452,13 @@ year_pattern = r'\d{4}$'
 # revert it to the original \d{4} 
 date_pattern = r'(19\d{2}|20\d{2})\-(0[1-9]|1[0-2])\-(0[1-9]|[1-2][0-9])'
 ssn_pattern = r'^\d{9}$'
-# Education(9), Entertainment(13), Healthcare(10),\n \
-# Grocery(7), Test(4), Gas(3), Bills(5)
 # compile to be able to use re.IGNORECASE or (?i) to make case insensitive
-# what are the pros and cons of making the regex's objects? 
 transaction_type_pattern = r'(?i)(education|entertainment|healthcare|grocery|test|gas|bills)'
 credit_card_pattern = r'\d{16}'
-#does it match with table even if user inputs only lower case ?
 state_pattern = r'[A-Za-z]{2}'
 
 #will this force the user to enter in the correct input?
 def check_case(user_input, pattern):
-    # return len(zip) == 5 and zip.isdigit()
     #have to use re.match(user_input, pattern) instead of user_input.match(pattern) because it needs to be a regular expression object
     #have to pass the pattern as the frist object to match vs the user_input
     #had to change from .match to .fullmatch because when validating the user input for the month if would accept 4 digit
@@ -372,6 +466,7 @@ def check_case(user_input, pattern):
     while not re.fullmatch(pattern, user_input):
             user_input = input("Please enter a correctly fomated value: ")
     return user_input
+
 
 ### MAIN PROGRAM ###
 
@@ -394,8 +489,6 @@ while choice != 'q':
         y = check_case(y, year_pattern)
         m = input("Enter in month (MM): ")
         m = check_case(m, month_pattern)
-        # date = input("Enter desired date (YYYY-MM-DD): ")
-        # date = check_case(date, date_pattern)
         disp_tran_by_cust_zip(zip, y, m)
     elif choice == '2':
         t_type = input("Enter desired transaction type(Education, Entertainment, Healthcare, Grocery, Test, Gas, Bills): ")
@@ -410,7 +503,6 @@ while choice != 'q':
         cust_ssn = check_case(cust_ssn, ssn_pattern)
         check_cust_exist(cust_ssn)
     elif choice == '5':
-        #should i name this variable differently?
         cust_ssn = input("Enter customer's SSN for the acconut account you wish to modify: ")
         cust_ssn = check_case(cust_ssn, ssn_pattern)
         modify_cust_account(cust_ssn, cust_sql)
@@ -436,6 +528,14 @@ while choice != 'q':
         plot_high_cust_state()
     elif choice == '10':
         plot_sum_of_top_ten_cust()
+    elif choice == '11':
+        plot_self_employed_approved_loans()
+    elif choice == '12':
+        plot_rejected_male_married_apps()
+    elif choice == '13':
+        plot_top_three_sale_months()
+    elif choice == '14':
+        print_response_status_code()
     elif choice == 'q':
         print("\nExiting program.")
     else:
